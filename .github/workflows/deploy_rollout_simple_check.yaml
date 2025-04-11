@@ -47,19 +47,19 @@ jobs:
       - name: Set Firebase Project Env Var
         run: echo "GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}" >> $GITHUB_ENV
 
-      # - name: Trigger Firebase App Hosting Rollout
-      #   id: trigger_rollout
-      #   run: |
-      #     echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}'..."
-      #     # Execute create command. We don't need to capture output for this version.
-      #     firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ secrets.GCP_PROJECT_ID }}
-      #     echo "Rollout initiated."
+      - name: Trigger Firebase App Hosting Rollout
+        id: trigger_rollout
+        run: |
+          echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}'..."
+          # Execute create command. We don't need to capture output for this version.
+          firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ secrets.GCP_PROJECT_ID }}
+          echo "Rollout initiated."
 
-      # - name: Wait Fixed Duration
-      #   run: |
-      #     echo "Waiting for ${{ env.WAIT_SECONDS }} seconds for deployment to stabilize..."
-      #     sleep ${{ env.WAIT_SECONDS }}
-      #     echo "Wait finished."
+      - name: Wait Fixed Duration
+        run: |
+          echo "Waiting for ${{ env.WAIT_SECONDS }} seconds for deployment to stabilize..."
+          sleep ${{ env.WAIT_SECONDS }}
+          echo "Wait finished."
 
       - name: Validate Deployed Content
         run: |
