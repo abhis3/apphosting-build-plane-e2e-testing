@@ -1,0 +1,82 @@
+name: Deploy FAH Rollout and Simple Check
+
+on:
+  workflow_dispatch: # Allows manual triggering from the Actions tab
+
+jobs:
+  deploy_and_simple_check:
+    name: Trigger Rollout, Wait, and Check Content
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # Can read repo content if needed
+      id-token: write # Required for google-github-actions/auth using Workload Identity Federation
+
+    # Define constants
+    env:
+      TARGET_BACKEND: next-js-kitchen-sink
+      TARGET_BRANCH: main
+      TARGET_URL: https://next-js-kitchen-sink--abhisun-testing-e2e-poc.us-central1.hosted.app
+      EXPECTED_PHRASE: "Save and see your changes instantly." # Static phrase to check for
+      WAIT_SECONDS: 300 # 5 minutes
+
+    steps:
+      # - name: Checkout Code (Optional)
+      #   uses: actions/checkout@v4
+      #   with:
+      #     fetch-depth: 0 
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' 
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          # Option 1: Workload Identity Federation (Recommended)
+          # workload_identity_provider: 'projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/YOUR_POOL/providers/YOUR_PROVIDER'
+          # service_account: 'your-service-account@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com'
+
+          # Option 2: Service Account Key JSON 
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set Firebase Project Env Var
+        run: echo "GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}" >> $GITHUB_ENV
+
+      # - name: Trigger Firebase App Hosting Rollout
+      #   id: trigger_rollout
+      #   run: |
+      #     echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}'..."
+      #     # Execute create command. We don't need to capture output for this version.
+      #     firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ secrets.GCP_PROJECT_ID }}
+      #     echo "Rollout initiated."
+
+      # - name: Wait Fixed Duration
+      #   run: |
+      #     echo "Waiting for ${{ env.WAIT_SECONDS }} seconds for deployment to stabilize..."
+      #     sleep ${{ env.WAIT_SECONDS }}
+      #     echo "Wait finished."
+
+      - name: Validate Deployed Content
+        run: |
+          echo "Validating content at ${{ env.TARGET_URL }}"
+          echo "Checking for phrase: '${{ env.EXPECTED_PHRASE }}'"
+          
+          # Use curl to fetch the page content (-s silent, -L follow redirects, --fail fail on >=400 errors)
+          # Add retry logic for transient network issues
+          # Pipe output to grep (-q quiet mode, exits 0 if found, 1 if not found)
+          if curl -s -L --retry 3 --retry-delay 10 --fail --connect-timeout 15 "${{ env.TARGET_URL }}" | grep -q "${{ env.EXPECTED_PHRASE }}"; then
+            echo "Validation successful: Expected phrase found."
+            exit 0 # Success
+          else
+            echo "::error::Validation failed: Expected phrase NOT found."
+            # Optional: Dump first few lines of actual content for debugging
+            echo "---- Start of Page Content ----"
+            curl -s -L --retry 1 "${{ env.TARGET_URL }}" | head -n 20 
+            echo "---- End of Page Content ----"
+            exit 1 # Failure
+          fi
