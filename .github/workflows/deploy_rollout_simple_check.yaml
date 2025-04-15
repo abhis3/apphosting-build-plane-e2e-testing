@@ -36,10 +36,17 @@ jobs:
       - name: Check Firebase Tools Version
         run: firebase --version
 
+      # - name: Update gcloud Components
+      #   run: |
+      #     echo "Updating gcloud components and installing alpha..."
+      #     sudo apt-get install google-cloud-cli
+      #     echo "gcloud components update/install finished."
+
       - name: Update gcloud Components
         run: |
           echo "Updating gcloud components and installing alpha..."
-          sudo apt-get install google-cloud-cli
+          gcloud components update --quiet || echo "WARN: Failed to update gcloud components."
+          gcloud components install alpha --quiet || echo "WARN: Failed to install gcloud alpha components."
           echo "gcloud components update/install finished."
 
       # Option 1: Workload Identity Federation (Recommended)
@@ -52,30 +59,19 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # - name: Manually Authenticate using Service Account Key (Final Attempt)
-      #   id: manual_auth
-      #   run: |
-      #     echo "Attempting manual SA activation..."
-      #     # Write the key from the secret to a temporary file
-      #     printf '%s' "${{ secrets.GCP_SA_KEY }}" > gcp_key.json
+      - name: Check Auth Action Outputs
+        run: |
+          echo "--- Checking environment variables set by auth action ---"
+          echo "GOOGLE_APPLICATION_CREDENTIALS: $GOOGLE_APPLICATION_CREDENTIALS"
+          echo "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: $CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"
+          echo "GOOGLE_GHA_CREDS_PATH: $GOOGLE_GHA_CREDS_PATH" # Often set by the action
           
-      #     # Activate the service account using the key file
-      #     # Add --verbosity=debug for more gcloud auth details if it fails
-      #     gcloud auth activate-service-account --key-file=gcp_key.json --verbosity=debug || \
-      #       (echo "::error::'gcloud auth activate-service-account' command failed!" && rm gcp_key.json && exit 1)
-          
-      #     echo "Manual SA activation command executed."
-      #     # Clean up the temporary key file IMMEDIATELY after use
-      #     rm gcp_key.json 
-          
-      #     # Verify activation worked by checking the active account
-      #     ACCOUNT=$(gcloud config get-value account)
-      #     echo "gcloud account after manual activation: $ACCOUNT"
-      #     if [[ "$ACCOUNT" != *"@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"* ]]; then
-      #       echo "::error::Manual activation failed or activated wrong account!"
-      #       exit 1
-      #     fi
-      #     echo "Manual activation successful for $ACCOUNT"
+          echo "--- Checking existence and content of credential file ---"
+          ls -l "$GOOGLE_GHA_CREDS_PATH" || echo "::warning::Credential file not found at expected path!"
+          # Optionally cat the file, but it might contain sensitive tokens now
+          # echo "--- Credential file content (first few lines) ---"
+          # head -n 5 "$GOOGLE_GHA_CREDS_PATH" || echo "::warning::Could not read credential file!"
+          # echo "--- End credential file content ---"
 
       - name: Test Authentication and Permissions with gcloud
         id: gcloud_test
