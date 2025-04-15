@@ -66,6 +66,12 @@ jobs:
           # Using printf avoids potential issues with echo adding newlines inside the JSON
           printf '%s' "${{ secrets.GCP_SA_KEY }}" > gcp_key.json
 
+          # --- ADD THIS BLOCK TO INSPECT THE FILE ---
+          echo "--- Inspecting gcp_key.json content with non-printing chars visible (cat -vet) ---"
+          cat -vet gcp_key.json
+          echo "--- End of gcp_key.json inspection ---"
+          # --- END OF ADDED BLOCK ---
+
           # Validate JSON syntax using jq (install if needed, or skip if jq not available/desired)
           if command -v jq &> /dev/null && ! jq -e . gcp_key.json > /dev/null; then
               echo "::error::Service Account Key JSON appears invalid according to jq!"
