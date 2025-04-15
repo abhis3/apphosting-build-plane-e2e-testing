@@ -49,76 +49,127 @@ jobs:
           gcloud --version || echo "WARN: gcloud --version failed"
           echo "--- Verification Finished ---"
 
-      - name: Manually Authenticate using Base64 Encoded Key
-        id: manual_auth_base64
+      - name: Activate SA and Set GOOGLE_APPLICATION_CREDENTIALS
+        id: manual_auth_with_adc_env
         run: |
-          echo "Attempting manual SA activation using Base64 secret..."
+          echo "Activating SA and setting GOOGLE_APPLICATION_CREDENTIALS..."
+          KEY_FILE_PATH="${PWD}/gcp_key.json" # Define path clearly
+
           # Decode the Base64 secret and write to the key file
-          echo "${{ secrets.GCP_SA_KEY_BASE64 }}" | base64 --decode > gcp_key.json || \
-            (echo "::error::Failed to decode Base64 secret! Check GCP_SA_KEY_BASE64 content." && exit 1)
-            
-          # Optional: Inspect the decoded file (use if still failing)
-          # echo "--- Inspecting DECODED gcp_key.json content ---"
-          # cat -vet gcp_key.json
-          # echo "--- End of inspection ---"
+          echo "${{ secrets.GCP_SA_KEY_BASE64 }}" | base64 --decode > "${KEY_FILE_PATH}" || \
+            (echo "::error::Failed to decode Base64 secret!" && exit 1)
 
-          # Activate the service account using the decoded key file
-          gcloud auth activate-service-account --key-file=gcp_key.json --project=${{ env.GCP_PROJECT_ID }} || \
-            (echo "::error::'gcloud auth activate-service-account' command failed! Check decoded key file and SA permissions." && rm gcp_key.json && exit 1)
+          # Activate the service account for gcloud context (might help libraries)
+          gcloud auth activate-service-account --key-file="${KEY_FILE_PATH}" --project=${{ env.GCP_PROJECT_ID }} || \
+            (echo "::error::'gcloud auth activate-service-account' command failed!" && rm "${KEY_FILE_PATH}" && exit 1)
 
-          echo "Manual SA activation command executed."
-          # Clean up the temporary key file IMMEDIATELY after use
-          rm gcp_key.json
+          # --- Explicitly set the environment variable for subsequent steps ---
+          # Use $GITHUB_ENV to make it available to later steps in the job
+          echo "GOOGLE_APPLICATION_CREDENTIALS=${KEY_FILE_PATH}" >> $GITHUB_ENV
+          echo "Set GOOGLE_APPLICATION_CREDENTIALS to ${KEY_FILE_PATH}"
+          # --- End of addition ---
 
-          # Verify activation worked
+          # Optional: Verify gcloud activation worked
           ACCOUNT=$(gcloud config get-value account)
           PROJECT=$(gcloud config get-value project)
-          echo "gcloud account after manual activation: $ACCOUNT"
-          echo "gcloud project after manual activation: $PROJECT"
-          if [[ "$ACCOUNT" != *"@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com"* ]]; then
-            echo "::error::Manual activation failed or activated wrong account!"
+          echo "gcloud account after activation: $ACCOUNT"
+          echo "gcloud project after activation: $PROJECT"
+          if [[ "$ACCOUNT" != *"@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com"* || "$PROJECT" != "${{ env.GCP_PROJECT_ID }}" ]]; then
+            echo "::error::Manual activation verification failed!"
+            rm "${KEY_FILE_PATH}" # Clean up even on verification failure
             exit 1
           fi
-          if [[ "$PROJECT" != "${{ env.GCP_PROJECT_ID }}" ]]; then
-            echo "::error::Manual activation set wrong project!"
-            exit 1
-          fi
-          echo "Manual activation successful for $ACCOUNT in project $PROJECT"
+          echo "Manual activation successful and GOOGLE_APPLICATION_CREDENTIALS set."
+          # NOTE: Do NOT delete the key file here yet, as the ENV VAR points to it!
+          # It will be cleaned up when the runner workspace is cleared after the job.
+          # If you need earlier cleanup, do it in a post-job step.
 
-      # - name: Trigger Firebase App Hosting Rollout
-      #   id: trigger_rollout
-      #   run: |
-      #     echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}'..."
-      #     # Project should be set by gcloud auth activate-service-account, but --project adds safety
-      #     firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }}
+      # Keep the gcloud component update step if needed elsewhere
+      # - name: Update gcloud Components ...
 
-      #     # Optional: Add --debug flag back temporarily if you encounter issues in THIS step
-      #     # firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }} --debug
-
-      #     echo "Rollout command initiated."
-      #     # Add Rollout ID capture back here later if needed for polling
-      #     # rollout_id=$(...)
-      #     # echo "rollout_id=$rollout_id" >> $GITHUB_OUTPUT
-
-      
-      # Step: Trigger Rollout using firebase --token
-      - name: Trigger Firebase App Hosting Rollout (with Token)
-        id: trigger_rollout_token
+      # Now run the Firebase command - it should pick up GOOGLE_APPLICATION_CREDENTIALS
+      - name: Trigger Firebase App Hosting Rollout (with debug)
+        id: trigger_rollout
+        # This step now relies on GOOGLE_APPLICATION_CREDENTIALS being set correctly
         run: |
-          echo "Attempting to get access token..."
-          # Get short-lived access token using the activated SA
-          ACCESS_TOKEN=$(gcloud auth print-access-token) || (echo "::error::Failed to print access token!" && exit 1)
-          if [ -z "$ACCESS_TOKEN" ]; then
-            echo "::error::Access token is empty!"
-            exit 1
-          fi
-          
-          echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}' WITH TOKEN..."
-          # Use the --token flag with firebase
-          # Also keep --project for clarity
-          firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }} --token "$ACCESS_TOKEN" --debug 
-          
+          echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}' WITH DEBUG..."
+          # Project should be picked up from active gcloud config or GOOGLE_CLOUD_PROJECT env var
+          # Explicit --project flag adds robustness
+          firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }} --debug
           echo "Rollout command executed."
+
+      # ... rest of your workflow (Wait, Validate) ...
+
+      # - name: Manually Authenticate using Base64 Encoded Key
+      #   id: manual_auth_base64
+      #   run: |
+      #     echo "Attempting manual SA activation using Base64 secret..."
+      #     # Decode the Base64 secret and write to the key file
+      #     echo "${{ secrets.GCP_SA_KEY_BASE64 }}" | base64 --decode > gcp_key.json || \
+      #       (echo "::error::Failed to decode Base64 secret! Check GCP_SA_KEY_BASE64 content." && exit 1)
+            
+      #     # Optional: Inspect the decoded file (use if still failing)
+      #     # echo "--- Inspecting DECODED gcp_key.json content ---"
+      #     # cat -vet gcp_key.json
+      #     # echo "--- End of inspection ---"
+
+      #     # Activate the service account using the decoded key file
+      #     gcloud auth activate-service-account --key-file=gcp_key.json --project=${{ env.GCP_PROJECT_ID }} || \
+      #       (echo "::error::'gcloud auth activate-service-account' command failed! Check decoded key file and SA permissions." && rm gcp_key.json && exit 1)
+
+      #     echo "Manual SA activation command executed."
+      #     # Clean up the temporary key file IMMEDIATELY after use
+      #     rm gcp_key.json
+
+      #     # Verify activation worked
+      #     ACCOUNT=$(gcloud config get-value account)
+      #     PROJECT=$(gcloud config get-value project)
+      #     echo "gcloud account after manual activation: $ACCOUNT"
+      #     echo "gcloud project after manual activation: $PROJECT"
+      #     if [[ "$ACCOUNT" != *"@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com"* ]]; then
+      #       echo "::error::Manual activation failed or activated wrong account!"
+      #       exit 1
+      #     fi
+      #     if [[ "$PROJECT" != "${{ env.GCP_PROJECT_ID }}" ]]; then
+      #       echo "::error::Manual activation set wrong project!"
+      #       exit 1
+      #     fi
+      #     echo "Manual activation successful for $ACCOUNT in project $PROJECT"
+
+      - name: Trigger Firebase App Hosting Rollout
+        id: trigger_rollout
+        run: |
+          echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}'..."
+          # Project should be set by gcloud auth activate-service-account, but --project adds safety
+          firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }}
+
+          # Optional: Add --debug flag back temporarily if you encounter issues in THIS step
+          # firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }} --debug
+
+          echo "Rollout command initiated."
+          # Add Rollout ID capture back here later if needed for polling
+          # rollout_id=$(...)
+          # echo "rollout_id=$rollout_id" >> $GITHUB_OUTPUT
+
+
+      # # Step: Trigger Rollout using firebase --token
+      # - name: Trigger Firebase App Hosting Rollout (with Token)
+      #   id: trigger_rollout_token
+      #   run: |
+      #     echo "Attempting to get access token..."
+      #     # Get short-lived access token using the activated SA
+      #     ACCESS_TOKEN=$(gcloud auth print-access-token) || (echo "::error::Failed to print access token!" && exit 1)
+      #     if [ -z "$ACCESS_TOKEN" ]; then
+      #       echo "::error::Access token is empty!"
+      #       exit 1
+      #     fi
+          
+      #     echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}' WITH TOKEN..."
+      #     # Use the --token flag with firebase
+      #     # Also keep --project for clarity
+      #     firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }} --token "$ACCESS_TOKEN" --debug 
+          
+      #     echo "Rollout command executed."
 
 
       - name: Wait Fixed Duration
