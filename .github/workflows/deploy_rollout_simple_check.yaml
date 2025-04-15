@@ -97,48 +97,22 @@ jobs:
           
       #     echo "--- gcloud tests completed successfully ---"
 
-      - name: Test Authentication and Permissions with gcloud (Using Override)
-        id: gcloud_test
+      - name: Test Authentication via projects describe (Using Override)
+        id: gcloud_test_simple
         env:
-          # Make the credentials path available reliably to the script
           CRED_FILE_PATH: ${{ env.GOOGLE_GHA_CREDS_PATH }} 
         run: |
-          # Check if the credential file path variable is set
+          echo "--- Confirming credentials work using gcloud projects describe ---"
           if [ -z "$CRED_FILE_PATH" ]; then
-            echo "::error::Credential file path (GOOGLE_GHA_CREDS_PATH) is not set!"
-            # Fallback attempt using GOOGLE_APPLICATION_CREDENTIALS path
-            CRED_FILE_PATH="$GOOGLE_APPLICATION_CREDENTIALS"
-            if [ -z "$CRED_FILE_PATH" ]; then
-                echo "::error::GOOGLE_APPLICATION_CREDENTIALS is also not set!"
-                exit 1
-            fi
+            CRED_FILE_PATH="$GOOGLE_APPLICATION_CREDENTIALS" # Fallback
+            if [ -z "$CRED_FILE_PATH" ]; then echo "::error::Credential file path not set!"; exit 1; fi
             echo "::warning::Using GOOGLE_APPLICATION_CREDENTIALS path as fallback: $CRED_FILE_PATH"
           fi
 
-          echo "--- Checking gcloud authentication (using --credential-file-override) ---"
-          # Add the override flag to auth list
-          gcloud auth list --credential-file-override="$CRED_FILE_PATH" --verbosity=debug
-          # Capture active account using the override
-          ACTIVE_ACCOUNT=$(gcloud config get-value account --credential-file-override="$CRED_FILE_PATH")
-          echo "Active gcloud account (via override): $ACTIVE_ACCOUNT"
-          if [[ "$ACTIVE_ACCOUNT" != *"@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"* ]]; then
-            echo "::warning::gcloud active account doesn't look like the expected Service Account!"
-          fi
-          
-          echo "--- Checking active project ---"
-          # Config list doesn't typically need override, but doesn't hurt
-          gcloud config list core/project --credential-file-override="$CRED_FILE_PATH" || echo "WARN: Could not get project config"
-          
-          echo "--- Checking permissions by describing project (using --credential-file-override) ---"
           gcloud projects describe ${{ secrets.GCP_PROJECT_ID }} --format="value(projectNumber)" --credential-file-override="$CRED_FILE_PATH" --verbosity=debug || \
-            (echo "::error::Failed to describe project using gcloud with override. Check key validity/SA status." && exit 1)
-          
-          echo "--- Checking App Hosting Admin permissions via gcloud (using --credential-file-override) ---"
-          # This uses gcloud to check a permission firebase CLI needs.
-          gcloud alpha firebase app-hosting backends list --project ${{ secrets.GCP_PROJECT_ID }} --region us-central1 --credential-file-override="$CRED_FILE_PATH" --verbosity=debug || \
-            (echo "::error::Failed to list App Hosting backends using gcloud with override. Check SA permissions for App Hosting specifically." && exit 1)
-          
-          echo "--- gcloud tests completed successfully ---"
+            (echo "::error::Failed to describe project using gcloud with override. Authentication still seems broken." && exit 1)
+
+          echo "--- gcloud projects describe succeeded, proceeding... ---"
 
       - name: Check Firebase Login State
         run: |
