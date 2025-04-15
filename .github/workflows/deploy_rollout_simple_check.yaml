@@ -46,7 +46,6 @@ jobs:
         run: |
           echo "Updating gcloud components and installing alpha..."
           gcloud components update --quiet || echo "WARN: Failed to update gcloud components."
-          gcloud components install alpha --quiet || echo "WARN: Failed to install gcloud alpha components."
           echo "gcloud components update/install finished."
 
       # Option 1: Workload Identity Federation (Recommended)
@@ -73,28 +72,71 @@ jobs:
           # head -n 5 "$GOOGLE_GHA_CREDS_PATH" || echo "::warning::Could not read credential file!"
           # echo "--- End credential file content ---"
 
-      - name: Test Authentication and Permissions with gcloud
+      # - name: Test Authentication and Permissions with gcloud
+      #   id: gcloud_test
+      #   run: |
+      #     echo "--- Checking gcloud authentication ---"
+      #     # List active account gcloud is using
+      #     gcloud auth list
+      #     ACTIVE_ACCOUNT=$(gcloud config get-value account)
+      #     echo "Active gcloud account: $ACTIVE_ACCOUNT"
+      #     if [[ "$ACTIVE_ACCOUNT" != *"@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"* ]]; then
+      #       echo "::warning::gcloud active account doesn't look like the expected Service Account!"
+      #     fi
+          
+      #     echo "--- Checking active project ---"
+      #     gcloud config list core/project || echo "WARN: Could not get project config"
+          
+      #     echo "--- Checking permissions by describing project (requires roles/browser or owner) ---"
+      #     gcloud projects describe ${{ secrets.GCP_PROJECT_ID }} --format="value(projectNumber)" || (echo "::error::Failed to describe project using gcloud. Authentication or core permissions likely failed." && exit 1)
+          
+      #     echo "--- Checking App Hosting Admin permissions via gcloud (requires firebaseapphosting.backends.list) ---"
+      #     # This uses gcloud to check a permission firebase CLI needs.
+      #     # NOTE: Might require 'gcloud components update' or 'gcloud components install alpha' if command not found
+      #     gcloud alpha firebase app-hosting backends list --project ${{ secrets.GCP_PROJECT_ID }} --region us-central1 || (echo "::error::Failed to list App Hosting backends using gcloud. Check SA permissions for App Hosting specifically." && exit 1)
+          
+      #     echo "--- gcloud tests completed successfully ---"
+
+      - name: Test Authentication and Permissions with gcloud (Using Override)
         id: gcloud_test
+        env:
+          # Make the credentials path available reliably to the script
+          CRED_FILE_PATH: ${{ env.GOOGLE_GHA_CREDS_PATH }} 
         run: |
-          echo "--- Checking gcloud authentication ---"
-          # List active account gcloud is using
-          gcloud auth list
-          ACTIVE_ACCOUNT=$(gcloud config get-value account)
-          echo "Active gcloud account: $ACTIVE_ACCOUNT"
+          # Check if the credential file path variable is set
+          if [ -z "$CRED_FILE_PATH" ]; then
+            echo "::error::Credential file path (GOOGLE_GHA_CREDS_PATH) is not set!"
+            # Fallback attempt using GOOGLE_APPLICATION_CREDENTIALS path
+            CRED_FILE_PATH="$GOOGLE_APPLICATION_CREDENTIALS"
+            if [ -z "$CRED_FILE_PATH" ]; then
+                echo "::error::GOOGLE_APPLICATION_CREDENTIALS is also not set!"
+                exit 1
+            fi
+            echo "::warning::Using GOOGLE_APPLICATION_CREDENTIALS path as fallback: $CRED_FILE_PATH"
+          fi
+
+          echo "--- Checking gcloud authentication (using --credential-file-override) ---"
+          # Add the override flag to auth list
+          gcloud auth list --credential-file-override="$CRED_FILE_PATH" --verbosity=debug
+          # Capture active account using the override
+          ACTIVE_ACCOUNT=$(gcloud config get-value account --credential-file-override="$CRED_FILE_PATH")
+          echo "Active gcloud account (via override): $ACTIVE_ACCOUNT"
           if [[ "$ACTIVE_ACCOUNT" != *"@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"* ]]; then
             echo "::warning::gcloud active account doesn't look like the expected Service Account!"
           fi
           
           echo "--- Checking active project ---"
-          gcloud config list core/project || echo "WARN: Could not get project config"
+          # Config list doesn't typically need override, but doesn't hurt
+          gcloud config list core/project --credential-file-override="$CRED_FILE_PATH" || echo "WARN: Could not get project config"
           
-          echo "--- Checking permissions by describing project (requires roles/browser or owner) ---"
-          gcloud projects describe ${{ secrets.GCP_PROJECT_ID }} --format="value(projectNumber)" || (echo "::error::Failed to describe project using gcloud. Authentication or core permissions likely failed." && exit 1)
+          echo "--- Checking permissions by describing project (using --credential-file-override) ---"
+          gcloud projects describe ${{ secrets.GCP_PROJECT_ID }} --format="value(projectNumber)" --credential-file-override="$CRED_FILE_PATH" --verbosity=debug || \
+            (echo "::error::Failed to describe project using gcloud with override. Check key validity/SA status." && exit 1)
           
-          echo "--- Checking App Hosting Admin permissions via gcloud (requires firebaseapphosting.backends.list) ---"
+          echo "--- Checking App Hosting Admin permissions via gcloud (using --credential-file-override) ---"
           # This uses gcloud to check a permission firebase CLI needs.
-          # NOTE: Might require 'gcloud components update' or 'gcloud components install alpha' if command not found
-          gcloud alpha firebase app-hosting backends list --project ${{ secrets.GCP_PROJECT_ID }} --region us-central1 || (echo "::error::Failed to list App Hosting backends using gcloud. Check SA permissions for App Hosting specifically." && exit 1)
+          gcloud alpha firebase app-hosting backends list --project ${{ secrets.GCP_PROJECT_ID }} --region us-central1 --credential-file-override="$CRED_FILE_PATH" --verbosity=debug || \
+            (echo "::error::Failed to list App Hosting backends using gcloud with override. Check SA permissions for App Hosting specifically." && exit 1)
           
           echo "--- gcloud tests completed successfully ---"
 
