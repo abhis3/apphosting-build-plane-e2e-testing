@@ -42,46 +42,40 @@ jobs:
           sudo apt-get install google-cloud-cli
           echo "gcloud components update/install finished."
 
-      # # Option 1: Workload Identity Federation (Recommended)
-      # # workload_identity_provider: 'projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/YOUR_POOL/providers/YOUR_PROVIDER'
-      # # service_account: 'your-service-account@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com'
-      # # Option 2: Service Account Key JSON 
-      # - name: Authenticate to Google Cloud
-      #   id: auth
-      #   uses: google-github-actions/auth@v2
-      #   with:
-      #     credentials_json: ${{ secrets.GCP_SA_KEY }}
+      # Option 1: Workload Identity Federation (Recommended)
+      # workload_identity_provider: 'projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/YOUR_POOL/providers/YOUR_PROVIDER'
+      # service_account: 'your-service-account@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com'
+      # Option 2: Service Account Key JSON 
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      # - name: Authenticate to Google Cloud (USING ACTION - Temporarily Disabled)
-      #   id: auth
-      #   uses: google-github-actions/auth@v2
-      #   with:
-      #     credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Manually Authenticate using Service Account Key (Final Attempt)
-        id: manual_auth
-        run: |
-          echo "Attempting manual SA activation..."
-          # Write the key from the secret to a temporary file
-          printf '%s' "${{ secrets.GCP_SA_KEY }}" > gcp_key.json
+      # - name: Manually Authenticate using Service Account Key (Final Attempt)
+      #   id: manual_auth
+      #   run: |
+      #     echo "Attempting manual SA activation..."
+      #     # Write the key from the secret to a temporary file
+      #     printf '%s' "${{ secrets.GCP_SA_KEY }}" > gcp_key.json
           
-          # Activate the service account using the key file
-          # Add --verbosity=debug for more gcloud auth details if it fails
-          gcloud auth activate-service-account --key-file=gcp_key.json --verbosity=debug || \
-            (echo "::error::'gcloud auth activate-service-account' command failed!" && rm gcp_key.json && exit 1)
+      #     # Activate the service account using the key file
+      #     # Add --verbosity=debug for more gcloud auth details if it fails
+      #     gcloud auth activate-service-account --key-file=gcp_key.json --verbosity=debug || \
+      #       (echo "::error::'gcloud auth activate-service-account' command failed!" && rm gcp_key.json && exit 1)
           
-          echo "Manual SA activation command executed."
-          # Clean up the temporary key file IMMEDIATELY after use
-          rm gcp_key.json 
+      #     echo "Manual SA activation command executed."
+      #     # Clean up the temporary key file IMMEDIATELY after use
+      #     rm gcp_key.json 
           
-          # Verify activation worked by checking the active account
-          ACCOUNT=$(gcloud config get-value account)
-          echo "gcloud account after manual activation: $ACCOUNT"
-          if [[ "$ACCOUNT" != *"@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"* ]]; then
-            echo "::error::Manual activation failed or activated wrong account!"
-            exit 1
-          fi
-          echo "Manual activation successful for $ACCOUNT"
+      #     # Verify activation worked by checking the active account
+      #     ACCOUNT=$(gcloud config get-value account)
+      #     echo "gcloud account after manual activation: $ACCOUNT"
+      #     if [[ "$ACCOUNT" != *"@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"* ]]; then
+      #       echo "::error::Manual activation failed or activated wrong account!"
+      #       exit 1
+      #     fi
+      #     echo "Manual activation successful for $ACCOUNT"
 
       - name: Test Authentication and Permissions with gcloud
         id: gcloud_test
