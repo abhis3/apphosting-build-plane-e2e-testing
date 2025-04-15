@@ -33,6 +33,9 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
+      - name: Check Firebase Tools Version
+        run: firebase --version
+
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
@@ -44,15 +47,48 @@ jobs:
           # Option 2: Service Account Key JSON 
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      - name: Test Authentication and Permissions with gcloud
+        id: gcloud_test
+        run: |
+          echo "--- Checking gcloud authentication ---"
+          # List active account gcloud is using
+          gcloud auth list
+          ACTIVE_ACCOUNT=$(gcloud config get-value account)
+          echo "Active gcloud account: $ACTIVE_ACCOUNT"
+          if [[ "$ACTIVE_ACCOUNT" != *"@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com"* ]]; then
+            echo "::warning::gcloud active account doesn't look like the expected Service Account!"
+          fi
+          
+          echo "--- Checking active project ---"
+          gcloud config list core/project || echo "WARN: Could not get project config"
+          
+          echo "--- Checking permissions by describing project (requires roles/browser or owner) ---"
+          gcloud projects describe ${{ secrets.GCP_PROJECT_ID }} --format="value(projectNumber)" || (echo "::error::Failed to describe project using gcloud. Authentication or core permissions likely failed." && exit 1)
+          
+          echo "--- Checking App Hosting Admin permissions via gcloud (requires firebaseapphosting.backends.list) ---"
+          # This uses gcloud to check a permission firebase CLI needs.
+          # NOTE: Might require 'gcloud components update' or 'gcloud components install alpha' if command not found
+          gcloud alpha firebase app-hosting backends list --project ${{ secrets.GCP_PROJECT_ID }} --region us-central1 || (echo "::error::Failed to list App Hosting backends using gcloud. Check SA permissions for App Hosting specifically." && exit 1)
+          
+          echo "--- gcloud tests completed successfully ---"
+
+      - name: Check Firebase Login State
+        run: |
+          echo "Checking firebase login status..."
+          firebase login:list || echo "WARN: firebase login:list command failed or showed no users." 
+          # Optionally, try forcing login with the key (might not be needed if gcloud auth works)
+          # echo "Attempting firebase login --no-localhost with key..."
+          # firebase login --no-localhost --relogin || echo "WARN: firebase login --no-localhost failed"
+
       - name: Set Firebase Project Env Var
         run: echo "GOOGLE_CLOUD_PROJECT=${{ secrets.GCP_PROJECT_ID }}" >> $GITHUB_ENV
 
-      - name: Trigger Firebase App Hosting Rollout
+      - name: Trigger Firebase App Hosting Rollout (with debug)
         id: trigger_rollout
         run: |
-          echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}'..."
+          echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}' WITH DEBUG..."
           # Execute create command. We don't need to capture output for this version.
-          firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ secrets.GCP_PROJECT_ID }}
+          firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ secrets.GCP_PROJECT_ID }} --debug
           echo "Rollout initiated."
 
       - name: Wait Fixed Duration
