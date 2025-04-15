@@ -85,20 +85,41 @@ jobs:
           fi
           echo "Manual activation successful for $ACCOUNT in project $PROJECT"
 
-      - name: Trigger Firebase App Hosting Rollout
-        id: trigger_rollout
+      # - name: Trigger Firebase App Hosting Rollout
+      #   id: trigger_rollout
+      #   run: |
+      #     echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}'..."
+      #     # Project should be set by gcloud auth activate-service-account, but --project adds safety
+      #     firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }}
+
+      #     # Optional: Add --debug flag back temporarily if you encounter issues in THIS step
+      #     # firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }} --debug
+
+      #     echo "Rollout command initiated."
+      #     # Add Rollout ID capture back here later if needed for polling
+      #     # rollout_id=$(...)
+      #     # echo "rollout_id=$rollout_id" >> $GITHUB_OUTPUT
+
+      
+      # Step: Trigger Rollout using firebase --token
+      - name: Trigger Firebase App Hosting Rollout (with Token)
+        id: trigger_rollout_token
         run: |
-          echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}'..."
-          # Project should be set by gcloud auth activate-service-account, but --project adds safety
-          firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }}
+          echo "Attempting to get access token..."
+          # Get short-lived access token using the activated SA
+          ACCESS_TOKEN=$(gcloud auth print-access-token) || (echo "::error::Failed to print access token!" && exit 1)
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "::error::Access token is empty!"
+            exit 1
+          fi
+          
+          echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}' WITH TOKEN..."
+          # Use the --token flag with firebase
+          # Also keep --project for clarity
+          firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }} --token "$ACCESS_TOKEN" --debug 
+          
+          echo "Rollout command executed."
 
-          # Optional: Add --debug flag back temporarily if you encounter issues in THIS step
-          # firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }} --debug
-
-          echo "Rollout command initiated."
-          # Add Rollout ID capture back here later if needed for polling
-          # rollout_id=$(...)
-          # echo "rollout_id=$rollout_id" >> $GITHUB_OUTPUT
 
       - name: Wait Fixed Duration
         run: |
