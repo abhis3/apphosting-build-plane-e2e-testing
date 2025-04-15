@@ -20,10 +20,10 @@ jobs:
       WAIT_SECONDS: 300 # 5 minutes
 
     steps:
-      # - name: Checkout Code (Optional)
-      #   uses: actions/checkout@v4
-      #   with:
-      #     fetch-depth: 0 
+      - name: Checkout Code (Optional)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
