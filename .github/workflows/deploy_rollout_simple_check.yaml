@@ -29,6 +29,26 @@ jobs:
         with:
           node-version: '20' # Use a current LTS version
 
+      - name: Install Firebase CLI and Update gcloud
+        run: |
+          echo "Installing/Updating Firebase CLI and gcloud..."
+          # This line installs the Firebase CLI globally
+          npm install -g firebase-tools@latest || exit 1 # Add '|| exit 1' to fail job if install fails
+
+          # Ensure gcloud is available and up-to-date (often pre-installed)
+          gcloud components update --quiet || echo "WARN: Failed to update gcloud components."
+          # No need for alpha components install based on previous discussion
+          echo "Install/Update finished."
+
+          echo "--- Verifying Installations ---"
+          echo "Firebase CLI Location: $(which firebase || echo 'firebase NOT FOUND')"
+          echo "Firebase CLI Version:"
+          firebase --version || echo "WARN: firebase --version failed"
+          echo "gcloud CLI Location: $(which gcloud || echo 'gcloud NOT FOUND')"
+          echo "gcloud CLI Version:"
+          gcloud --version || echo "WARN: gcloud --version failed"
+          echo "--- Verification Finished ---"
+
       - name: Manually Authenticate using Base64 Encoded Key
         id: manual_auth_base64
         run: |
