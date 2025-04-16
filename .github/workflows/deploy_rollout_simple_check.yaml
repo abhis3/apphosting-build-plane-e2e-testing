@@ -96,12 +96,12 @@ jobs:
             exit 1
           fi
           echo "--- Verification complete ---"
-          
+
           echo "GOOGLE_APPLICATION_CREDENTIALS is set to: '${{ env.GOOGLE_APPLICATION_CREDENTIALS }}'"
           echo "Triggering rollout for backend '${{ env.TARGET_BACKEND }}' from branch '${{ env.TARGET_BRANCH }}' WITH DEBUG..."
           # Project should be picked up from active gcloud config or GOOGLE_CLOUD_PROJECT env var
           # Explicit --project flag adds robustness
-          firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --project ${{ env.GCP_PROJECT_ID }} --debug
+          firebase apphosting:rollouts:create ${{ env.TARGET_BACKEND }} --git-branch ${{ env.TARGET_BRANCH }} --debug
           echo "Rollout command executed."
 
       # ... rest of workflow (Wait, Validate) ...
